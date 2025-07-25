@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Archery Challenge</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #1e1e1e;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const towerX = canvas.width / 4;
+    const towerY = canvas.height - 150;
+    const towerWidth = 80;
+    const towerHeight = 150;
+
+    let mouseX = towerX;
+    let mouseY = towerY;
+
+    const arrows = [];
+    let isCharging = false;
+
+    let level = 1;
+    const maxLevel = 50;
+
+    const enemies = [];
+
+    class Arrow {
+      constructor(angle) {
+        this.x = towerX;
+        this.y = towerY - towerHeight;
+        this.speed = 10;
+        this.vx = Math.cos(angle) * this.speed;
+        this.vy = Math.sin(angle) * this.speed;
+        this.angle = angle;
+        this.active = true;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        // Gravity effect
+        this.vy += 0.2;
+
+        enemies.forEach(enemy => {
+          if (this.active && this.x > enemy.x && this.x < enemy.x + enemy.size && this.y > enemy.y && this.y < enemy.y + enemy.size) {
+            enemy.hit = true;
+            this.active = false;
+          }
+        });
+
+        if (this.y > canvas.height || this.x > canvas.width || this.x < 0) this.active = false;
+      }
+      draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        ctx.fillStyle = "gold";
+        ctx.fillRect(-10, -2, 20, 4);
+        ctx.restore();
+      }
+    }
+
+    class Enemy {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.size = 50;
+        this.hit = false;
+      }
+      draw() {
+        ctx.fillStyle = this.hit ? "gray" : "white";
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+      }
+    }
+
+    function spawnEnemies(level) {
+      enemies.length = 0;
+      for (let i = 0; i < Math.min(level, 5); i++) {
+        const x = canvas.width / 2 + i * 100;
+        const y = canvas.height - 200 - i * 60;
+        enemies.push(new Enemy(x, y));
+      }
+    }
+
+    function drawTower() {
+      ctx.fillStyle = "#444";
+      ctx.fillRect(towerX - towerWidth / 2, towerY - towerHeight, towerWidth, towerHeight);
+    }
+
+    function drawPlayer(angle) {
+      ctx.save();
+      ctx.translate(towerX, towerY - towerHeight);
+      ctx.fillStyle = "#ccc";
+      ctx.fillRect(-10, -50, 20, 50);
+      // Arm
+      ctx.rotate(angle);
+      ctx.fillStyle = "#999";
+      ctx.fillRect(0, -5, 40, 10);
+      ctx.restore();
+    }
+
+    function drawLevel() {
+      ctx.fillStyle = "white";
+      ctx.font = "20px Arial";
+      ctx.fillText(`Level: ${level}`, 20, 30);
+    }
+
+    function gameLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      drawTower();
+
+      const dx = mouseX - towerX;
+      const dy = mouseY - (towerY - towerHeight);
+      const angle = Math.atan2(dy, dx);
+
+      drawPlayer(angle);
+
+      arrows.forEach(arrow => {
+        arrow.update();
+        arrow.draw();
+      });
+
+      for (let i = arrows.length - 1; i >= 0; i--) {
+        if (!arrows[i].active) arrows.splice(i, 1);
+      }
+
+      enemies.forEach(enemy => enemy.draw());
+
+      drawLevel();
+
+      if (enemies.every(e => e.hit)) {
+        if (level < maxLevel) {
+          level++;
+          spawnEnemies(level);
+        }
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    canvas.addEventListener("mousemove", e => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+
+    canvas.addEventListener("mousedown", () => {
+      isCharging = true;
+    });
+
+    canvas.addEventListener("mouseup", () => {
+      if (isCharging) {
+        const dx = mouseX - towerX;
+        const dy = mouseY - (towerY - towerHeight);
+        const angle = Math.atan2(dy, dx);
+        arrows.push(new Arrow(angle));
+        isCharging = false;
+      }
+    });
+
+    spawnEnemies(level);
+    gameLoop();
+  </script>
+</body>
+</html>

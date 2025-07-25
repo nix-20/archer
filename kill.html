@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Archery Challenge</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #0b121a 0%, #1e1e1e 90%);
+    }
+    canvas {
+      display: block;
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const towerX = canvas.width / 4;
+    const towerY = canvas.height - 150;
+    const towerWidth = 80;
+    const towerHeight = 150;
+
+    let mouseX = towerX;
+    let mouseY = towerY;
+
+    const playerArrows = [];
+    const enemyArrows = [];
+    let isCharging = false;
+
+    let level = 1;
+    const maxLevel = 50;
+
+    const enemies = [];
+
+    class Arrow {
+      constructor(x, y, angle, speed = 15) {
+        this.x = x;
+        this.y = y;
+        this.speed = speed;
+        this.vx = Math.cos(angle) * this.speed;
+        this.vy = Math.sin(angle) * this.speed;
+        this.angle = angle;
+        this.active = true;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        // Gravity effect
+        this.vy += 0.15;
+
+        // Collision: player arrows hit enemies
+        if (playerArrows.includes(this)) {
+          enemies.forEach(enemy => {
+            if (
+              this.active &&
+              this.x > enemy.x &&
+              this.x < enemy.x + enemy.size &&
+              this.y > enemy.y &&
+              this.y < enemy.y + enemy.size
+            ) {
+              enemy.hit = true;
+              this.active = false;
+            }
+          });
+        }
+
+        // Collision: enemy arrows hit player (non tutta la torre, solo personaggio)
+        if (enemyArrows.includes(this)) {
+          const playerX = towerX;
+          const playerY = towerY - towerHeight;
+          const playerWidth = 30;
+          const playerHeight = 60;
+          if (
+            this.active &&
+            this.x > playerX - playerWidth / 2 &&
+            this.x < playerX + playerWidth / 2 &&
+            this.y > playerY - playerHeight &&
+            this.y < playerY
+          ) {
+            alert("Sei stato colpito dal nemico!");
+            this.active = false;
+          }
+        }
+
+        if (this.y > canvas.height || this.x > canvas.width || this.x < 0) this.active = false;
+      }
+      draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        // Freccia sfumata oro
+        const grad = ctx.createLinearGradient(-10, 0, 10, 0);
+        grad.addColorStop(0, "#d4af37");
+        grad.addColorStop(1, "#f7e05a");
+        ctx.fillStyle = grad;
+        ctx.fillRect(-10, -2, 20, 4);
+
+        // Piume
+        ctx.fillStyle = "#ccc";
+        ctx.beginPath();
+        ctx.moveTo(-8, 0);
+        ctx.lineTo(-12, -4);
+        ctx.lineTo(-12, 4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    class Enemy {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.size = 50;
+        this.hit = false;
+        this.shootCooldown = 0;
+      }
+      draw() {
+        ctx.save();
+        // Corpo
+        const bodyGrad = ctx.createLinearGradient(this.x, this.y, this.x + this.size, this.y + this.size);
+        bodyGrad.addColorStop(0, "#444");
+        bodyGrad.addColorStop(1, "#888");
+        ctx.fillStyle = this.hit ? "#555" : bodyGrad;
+        ctx.shadowColor = this.hit ? "#333" : "#222";
+        ctx.shadowBlur = 8;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+
+        // Occhi
+        ctx.fillStyle = this.hit ? "#999" : "#eee";
+        ctx.beginPath();
+        ctx.ellipse(this.x + this.size * 0.3, this.y + this.size * 0.3, 8, 12, 0, 0, Math.PI * 2);
+        ctx.ellipse(this.x + this.size * 0.7, this.y + this.size * 0.3, 8, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pupille
+        ctx.fillStyle = this.hit ? "#666" : "#111";
+        ctx.beginPath();
+        ctx.ellipse(this.x + this.size * 0.3, this.y + this.size * 0.3, 4, 6, 0, 0, Math.PI * 2);
+        ctx.ellipse(this.x + this.size * 0.7, this.y + this.size * 0.3, 4, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+      tryToShoot() {
+        if (this.hit) return; // nemico morto non spara
+
+        if (this.shootCooldown > 0) {
+          this.shootCooldown--;
+          return;
+        }
+
+        // 10% probabilità di sparare ogni frame
+        if (Math.random() < 0.1) {
+          // Calcola angolo verso il personaggio
+          const targetX = towerX;
+          const targetY = towerY - towerHeight;
+          const dx = targetX - (this.x + this.size / 2);
+          const dy = targetY - (this.y + this.size / 2);
+          const angle = Math.atan2(dy, dx);
+
+          enemyArrows.push(new Arrow(this.x + this.size / 2, this.y + this.size / 2, angle, 12));
+
+          this.shootCooldown = 30; // cooldown di 30 frame (~0.5 secondi)
+        }
+      }
+    }
+
+    function spawnEnemies(level) {
+      enemies.length = 0;
+      for (let i = 0; i < Math.min(level, 5); i++) {
+        const x = canvas.width / 2 + i * 100;
+        const y = canvas.height - 200 - i * 60;
+        enemies.push(new Enemy(x, y));
+      }
+    }
+
+    function drawTower() {
+      ctx.save();
+      // Corpo torre con sfumatura
+      const towerGrad = ctx.createLinearGradient(towerX - towerWidth / 2, towerY - towerHeight, towerX + towerWidth / 2, towerY);
+      towerGrad.addColorStop(0, "#333");
+      towerGrad.addColorStop(1, "#777");
+      ctx.fillStyle = towerGrad;
+      ctx.shadowColor = "#222";
+      ctx.shadowBlur = 20;
+      ctx.fillRect(towerX - towerWidth / 2, towerY - towerHeight, towerWidth, towerHeight);
+
+      // Finestra luminosa
+      ctx.fillStyle = "rgba(180, 220, 255, 0.3)";
+      ctx.fillRect(towerX - 20, towerY - towerHeight + 40, 40, 60);
+
+      // Contorno torre
+      ctx.strokeStyle = "#666";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(towerX - towerWidth / 2, towerY - towerHeight, towerWidth, towerHeight);
+
+      ctx.restore();
+    }
+
+    function drawPlayer(angle) {
+      ctx.save();
+      ctx.translate(towerX, towerY - towerHeight);
+
+      // Corpo sfumato
+      const bodyGrad = ctx.createLinearGradient(-12, -50, 12, 0);
+      bodyGrad.addColorStop(0, "#a0522d");
+      bodyGrad.addColorStop(1, "#d2691e");
+      ctx.fillStyle = bodyGrad;
+      ctx.shadowColor = "#8b4513";
+      ctx.shadowBlur = 12;
+      ctx.fillRect(-12, -50, 24, 50);
+
+      // Testa
+      ctx.beginPath();
+      ctx.fillStyle = "#f2cfa9";
+      ctx.shadowColor = "#f2cfa9";
+      ctx.shadowBlur = 15;
+      ctx.arc(0, -65, 15, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Occhi
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#222";
+      ctx.beginPath();
+      ctx.ellipse(-6, -68, 4, 6, 0, 0, Math.PI * 2);
+      ctx.ellipse(6, -68, 4, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Braccio e arco
+      ctx.rotate(angle);
+      const armGrad = ctx.createLinearGradient(0, -5, 40, 5);
+      armGrad.addColorStop(0, "#8b5e3c");
+      armGrad.addColorStop(1, "#4a2c15");
+      ctx.fillStyle = armGrad;
+      ctx.shadowColor = "#5a3319";
+      ctx.shadowBlur = 8;
+      ctx.fillRect(0, -5, 42, 10);
+
+      // Corda arco
+      ctx.strokeStyle = "#220000";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -5);
+      ctx.lineTo(0, 5);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawLevel() {
+      ctx.fillStyle = "#aaffcc";
+      ctx.font = "22px 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+      ctx.shadowColor = "#0f4d44";
+      ctx.shadowBlur = 10;
+      ctx.fillText(`Level: ${level}`, 30, 40);
+      ctx.shadowBlur = 0;
+    }
+
+    function gameLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      drawTower();
+
+      const dx = mouseX - towerX;
+      const dy = mouseY - (towerY - towerHeight);
+      const angle = Math.atan2(dy, dx);
+
+      drawPlayer(angle);
+
+      // Update and draw player arrows
+      playerArrows.forEach(arrow => {
+        arrow.update();
+        arrow.draw();
+      });
+      for (let i = playerArrows.length - 1; i >= 0; i--) {
+        if (!playerArrows[i].active) playerArrows.splice(i, 1);
+      }
+
+      // Enemies draw and shoot
+      enemies.forEach(enemy => {
+        enemy.draw();
+        enemy.tryToShoot();
+      });
+
+      // Update and draw enemy arrows
+      enemyArrows.forEach(arrow => {
+        arrow.update();
+        arrow.draw();
+      });
+      for (let i = enemyArrows.length - 1; i >= 0; i--) {
+        if (!enemyArrows[i].active) enemyArrows.splice(i, 1);
+      }
+
+      drawLevel();
+
+      if (enemies.every(e => e.hit)) {
+        if (level < maxLevel) {
+          level++;
+          spawnEnemies(level);
+          playerArrows.length = 0;
+          enemyArrows.length = 0;
+        }
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    canvas.addEventListener("mousemove", e => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+
+    canvas.addEventListener("mousedown", () => {
+      isCharging = true;
+    });
+
+    canvas.addEventListener("mouseup", () => {
+      if (isCharging) {
+        const dx = mouseX - towerX;
+        const dy = mouseY - (towerY - towerHeight);
+        const angle = Math.atan2(dy, dx);
+        playerArrows.push(new Arrow(towerX, towerY - towerHeight, angle, 24));
+        isCharging = false;
+      }
+    });
+
+    spawnEnemies(level);
+    gameLoop();
+
+    window.addEventListener("resize", () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+  </script>
+</body>
+</html>
